@@ -41,8 +41,8 @@ Przeanalizowano nagłówki SDK i kod maszynowy bibliotek dołączonych do repo:
 - `AW_MPI_AI_GetFrame` ma ścieżkę bez bindingu i ograniczony czas oczekiwania.
   Podobne API jest używane w `src/player/wav_test.c`, lecz nie stanowi to
   walidacji BoxPro.
-- Wbudowany VQE nie daje potwierdzonego zestawu 80/120/160/200 Hz; wybrano
-  izolowany i testowalny DSP w aplikacji rejestratora.
+- Wbudowany interfejs VQE wymaga odróżnienia od działającego algorytmu;
+  poniżej wynik weryfikacji dołączonej biblioteki.
 
 Bufor 32 KiB należy do kontekstu audio, bez alokacji na ramkę. Pump sprawdza
 rozmiar, bit depth i mono/stereo. Nieznany układ przechodzi bez filtracji,
@@ -52,6 +52,41 @@ a strata raportowana. SDK zwraca również ogólne FAILURE dla pełnego bufora.
 Oczekiwanie GetFrame wynosi 200 ms; sygnał końca jest atomowy, wątki są łączone
 przed zniszczeniem kanałów. Błąd utworzenia wątku sprząta rozpoczęty tor audio.
 Błąd ReleaseFrame kończy pump i jest logowany; wymaga sprawdzenia na urządzeniu.
+
+## Weryfikacja wbudowanego HPF / VQE
+
+Sprawdzono konkretną `lib/softwinner/lib/libmedia_mpp.so`, SHA-256:
+`410e3aa3197a3127a65e66d2142beddcf8c7447a4522f476bfed835f08025936`.
+Analiza statyczna ARM (Capstone + tablica symboli ELF) pokazuje:
+
+- `AW_MPI_AI_SetVqeAttr` przekazuje indeks `0x7f002081` do
+  `AIChannel_SetConfig`. Jego obsługa (0x1eb98–0x1ebc8, 0x1eca0) kopiuje
+  0x140 bajtów konfiguracji do kontekstu AI pod offsetem 0x1f8.
+- `AW_MPI_AI_EnableVqe` przekazuje `0x7f002082`. Obsługa
+  0x1edd8–0x1ede0 tylko ustawia flagę pod offsetem 0x1f4 na 1.
+  Disable analogicznie zeruje tę flagę.
+- `AIChannel_GetConfig` odczytuje konfigurację do zwrócenia przez API.
+  W `AIChannel_EmptyThisBuffer`, `AIChannel_ComponentThread` oraz
+  `audioHw_AI_CapThread` nie ma użycia tej konfiguracji/flagi do filtrowania
+  próbek. Ścieżka AI kopiuje PCM i przekazuje go dalej.
+
+To znacznie mocniejsza przesłanka niż sam brak nazw symboli HPF: wskazuje, że
+VQE wejścia w tej bibliotece jest interfejsem zapisującym ustawienia, bez
+aktywnego przetwarzania. Sam SUCCESS z Set/Enable ani poprawny Get nie dowodzi
+filtracji. Jest to wynik analizy binarnej, nie pomiar na BoxPro.
+
+Nagłówek `mm_comm_aio.h` opisuje dwa różne interfejsy: samodzielny HPF
+80/120/150 Hz (`AUDIO_HPF_FREQ_E`) oraz HPF w konfiguracji AGC
+80/120/150/300/500 Hz (`s8UseHighPassFilt`). Wcześniejsze określenie „tylko
+80/120/150 Hz” dotyczyło pierwszego z nich. Żaden nie deklaruje 160/200 Hz ani
+charakterystyki Butterwortha drugiego rzędu. Komentarz `s32WorkSampleRate`
+w konfiguracji VQE wymienia 8/16 kHz; nie potwierdza obsługi DVR 48 kHz.
+Nie uruchamiamy AGC, aby uzyskać HPF.
+
+Własny DSP pozostaje uzasadniony dla dostarczonych bibliotek: ma określoną
+charakterystykę i testy przy 48 kHz. Jeżeli zostanie dostarczona inna biblioteka
+VQE, trzeba ponowić analizę i pomiar Off/On na prawdziwym DVR. Działający HPF
+w istniejącym bindingu byłby wart rozważenia, ponieważ pozwoliłby uniknąć pump.
 
 ## Walidacja bez urządzenia
 
@@ -118,7 +153,7 @@ pozwala odtworzyć konfigurację. Nie zmieniono bootloadera ani procedury update
 - `src/core/settings.c`, `.h`: trwałe ustawienie i walidacja starszych plików.
 - `src/core/dvr.c`: przekazanie HPF ze snapshotu do konfiguracji rejestratora.
 - `src/ui/page_audio.c`, `conf/ui.h`: wybór HPF i dodatkowy wiersz menu.
-- `test/audio_dsp/*`: testy DSP i pump, Makefile, ignorowane pliki wykonywalne.
+- `test/audio_dsp/*`, `.gitignore`: testy DSP i pump, Makefile, ignorowane pliki wykonywalne.
 - `test/record/test_dvr_naming.c`: snapshot HPF i poprawka nagłówka testu Linux.
 - `.github/workflows/build_and_release_boxpro.yml`: testy hosta przed buildem.
 - `docs/dvr-audio-hpf.md`: architektura, użycie, build, testy sprzętowe i rollback.
