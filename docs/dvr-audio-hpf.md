@@ -7,7 +7,9 @@ ani oficjalnego firmware. P1 / Voice Clarity nie jest częścią tej implementac
 ## Użycie
 
 W Audio wybierz `DVR High-Pass`: Off → 80 Hz → 120 Hz → 160 Hz → 200 Hz.
-Kliknięcie przechodzi do następnej wartości. Domyślnie Off. Zacznij odsłuchowe
+Kliknięcie otwiera suwak, pokrętło wybiera jedną z pięciu pozycji, a kolejne
+kliknięcie zatwierdza wybór, tak jak w regulacji głośności. Etykieta pokazuje
+Off lub częstotliwość w Hz. Domyślnie Off. Zacznij odsłuchowe
 porównanie od 120 Hz. Wybór zapisuje się automatycznie w istniejącym pliku
 ustawień jako `[record] audio_hpf_hz`. Starszy plik lub nieprawidłowa wartość
 oznacza Off. Zmiana podczas nagrania dotyczy następnego klipu: DVR przekazuje

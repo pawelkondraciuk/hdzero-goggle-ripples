@@ -37,7 +37,7 @@
 
 static btn_group_t btn_group_record_audio;
 static btn_group_t btn_group_audio_source;
-static lv_obj_t *hpf_value;
+static slider_group_t slider_group_dvr_hpf;
 static const int hpf_values[] = {0, 80, 120, 160, 200};
 static const char *hpf_names[] = {"Off", "80 Hz", "120 Hz", "160 Hz", "200 Hz"};
 
@@ -173,8 +173,15 @@ static lv_obj_t *page_audio_create(lv_obj_t *parent, panel_arr_t *arr) {
 
     create_btn_group_item(&btn_group_record_audio, cont, 2, _lang("Record Audio"), _lang("Yes"), _lang("No"), "", "", ROW_RECORD_AUDIO);
     create_btn_group_item(&btn_group_audio_source, cont, 3, _lang("Audio Source"), _lang("Mic"), _lang("Line In"), _lang("A/V In"), "", ROW_AUDIO_SOURCE);
-    create_label_item(cont, _lang("DVR High-Pass"), 1, ROW_DVR_HPF, 1);
-    hpf_value = create_label_item(cont, _lang(hpf_names[hpf_index()]), 2, ROW_DVR_HPF, 3);
+    create_slider_item(&slider_group_dvr_hpf, cont, _lang("DVR High-Pass"), 4, hpf_index(), ROW_DVR_HPF);
+    lv_obj_set_grid_cell(slider_group_dvr_hpf.name, LV_GRID_ALIGN_START, 1, 1,
+                         LV_GRID_ALIGN_CENTER, ROW_DVR_HPF, 1);
+    lv_obj_set_grid_cell(slider_group_dvr_hpf.slider, LV_GRID_ALIGN_STRETCH, 2, 3,
+                         LV_GRID_ALIGN_CENTER, ROW_DVR_HPF, 1);
+    lv_obj_set_grid_cell(slider_group_dvr_hpf.label, LV_GRID_ALIGN_START, 5, 1,
+                         LV_GRID_ALIGN_CENTER, ROW_DVR_HPF, 1);
+    lv_obj_set_width(slider_group_dvr_hpf.label, LV_SIZE_CONTENT);
+    lv_label_set_text(slider_group_dvr_hpf.label, _lang(hpf_names[hpf_index()]));
     snprintf(buf, sizeof(buf), "%s:", _lang("Volume Control"));
     create_label_item(cont, buf, 0, ROW_VOLUME_HEADER, 2);
     create_label_item(cont, _lang("Run Test"), 1, ROW_RUN_TEST, 1);
@@ -329,6 +336,8 @@ static void page_audio_update_test_indicator(uint32_t delta_ms) {
 }
 
 static slider_group_t *page_audio_selected_slider() {
+    if (selected_slider_row == ROW_DVR_HPF)
+        return &slider_group_dvr_hpf;
     if (selected_slider_row == ROW_DVR_AUDIO_VOLUME)
         return &slider_group_dvr_audio_volume;
     if (selected_slider_row == ROW_LIVE_AUDIO_VOLUME)
@@ -341,6 +350,8 @@ static slider_group_t *page_audio_selected_slider() {
 }
 
 static int page_audio_selected_slider_max() {
+    if (selected_slider_row == ROW_DVR_HPF)
+        return 4;
     if (selected_slider_row == ROW_DVR_AUDIO_VOLUME)
         return DVR_AUDIO_VOLUME_MAX;
     if (selected_slider_row == ROW_LIVE_AUDIO_VOLUME)
@@ -364,6 +375,18 @@ static void page_audio_update_slider(int value) {
     slider_group_t *slider_group = page_audio_selected_slider();
     int *setting_value = page_audio_selected_setting();
     int max_value = page_audio_selected_slider_max();
+
+    if (selected_slider_row == ROW_DVR_HPF) {
+        if (value < 0) value = 0;
+        if (value > 4) value = 4;
+        if (value != hpf_index()) {
+            g_setting.record.audio_hpf_hz = hpf_values[value];
+            update_slider_item_with_value(slider_group, value);
+            lv_label_set_text(slider_group->label, _lang(hpf_names[value]));
+            selected_slider_changed = true;
+        }
+        return;
+    }
 
     if (slider_group == NULL || setting_value == NULL)
         return;
@@ -390,7 +413,9 @@ static void page_audio_exit_slider() {
     app_state_push(APP_STATE_SUBMENU);
 
     if (selected_slider_changed) {
-        if (selected_slider_row == ROW_DVR_AUDIO_VOLUME) {
+        if (selected_slider_row == ROW_DVR_HPF) {
+            ini_putl("record", "audio_hpf_hz", g_setting.record.audio_hpf_hz, SETTING_INI);
+        } else if (selected_slider_row == ROW_DVR_AUDIO_VOLUME) {
             ini_putl("record", "dvr_audio_volume_v2", g_setting.record.dvr_audio_volume, SETTING_INI);
         } else if (selected_slider_row == ROW_LIVE_AUDIO_VOLUME) {
             ini_putl("record", "live_audio_volume", g_setting.record.live_audio_volume, SETTING_INI);
@@ -658,17 +683,12 @@ static void page_audio_on_click(uint8_t key, int sel) {
         btn_group_toggle_sel(&btn_group_audio_source);
         g_setting.record.audio_source = btn_group_get_sel(&btn_group_audio_source);
         ini_putl("record", "audio_source", g_setting.record.audio_source, SETTING_INI);
-    } else if (sel == ROW_DVR_HPF) {
-        int next = (hpf_index() + 1) % 5;
-        g_setting.record.audio_hpf_hz = hpf_values[next];
-        lv_label_set_text(hpf_value, _lang(hpf_names[next]));
-        ini_putl("record", "audio_hpf_hz", g_setting.record.audio_hpf_hz, SETTING_INI);
     } else if (sel == ROW_RUN_TEST) {
         if (audio_test_running || dvr_is_recording)
             return;
         selected_test_active = true;
         app_state_push(APP_STATE_SUBMENU_ITEM_FOCUSED);
-    } else if (sel == ROW_DVR_AUDIO_VOLUME || sel == ROW_LIVE_AUDIO_VOLUME ||
+    } else if (sel == ROW_DVR_HPF || sel == ROW_DVR_AUDIO_VOLUME || sel == ROW_LIVE_AUDIO_VOLUME ||
                sel == ROW_MIC_GAIN || sel == ROW_LINEIN_GAIN) {
         slider_group_t *slider_group;
 
