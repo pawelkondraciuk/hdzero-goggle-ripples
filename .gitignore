@@ -32,3 +32,5 @@ emu-out/
 /test/record/test_dvr_trace
 /test/record/test_dvr_naming
 /test/record/test_record_control
+/test/audio_dsp/test_audio_dsp
+/test/audio_dsp/test_audio_dsp_asan

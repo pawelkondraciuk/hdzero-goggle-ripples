@@ -11,6 +11,11 @@ jobs:
         with:
           submodules: true
 
+      - name: Test DVR audio on host
+        run: |
+          make -C test/audio_dsp run asan pump
+          make -C test/record run run_record_control
+
       - name: Build Firmware
         run: |
           bash setup.sh automated_build

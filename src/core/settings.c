@@ -70,6 +70,8 @@ const setting_t g_setting_defaults = {
         .osd = true,
         .audio = true,
         .audio_source = SETTING_RECORD_AUDIO_SOURCE_MIC,
+        .audio_hpf_hz = 0,
+        .audio_clarity = 0,
         .dvr_audio_volume = 8,
         .live_audio_volume = 10,
         .mic_gain = 4,
@@ -560,6 +562,12 @@ void settings_load(void) {
     g_setting.record.osd = settings_get_bool("record", "osd", g_setting_defaults.record.osd);
     g_setting.record.audio = settings_get_bool("record", "audio", g_setting_defaults.record.audio);
     g_setting.record.audio_source = ini_getl("record", "audio_source", g_setting_defaults.record.audio_source, SETTING_INI);
+    g_setting.record.audio_hpf_hz = ini_getl("record", "audio_hpf_hz", 0, SETTING_INI);
+    long clarity = ini_getl("record", "audio_clarity", 0, SETTING_INI);
+    g_setting.record.audio_clarity = clarity >= 0 && clarity <= 3 ? (int)clarity : 0;
+    int hpf = g_setting.record.audio_hpf_hz;
+    if (hpf != 0 && hpf != 80 && hpf != 120 && hpf != 160 && hpf != 200)
+        g_setting.record.audio_hpf_hz = 0;
     audio_volume = ini_getl("record", "audio_volume", 31, SETTING_INI);
     dvr_audio_volume = ini_getl("record", "dvr_audio_volume_v2", -1, SETTING_INI);
     if (dvr_audio_volume < 0)
