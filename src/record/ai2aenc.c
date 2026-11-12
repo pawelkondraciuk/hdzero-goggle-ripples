@@ -29,6 +29,8 @@ static void ai2aenc_configAiAttr(Ai2Aenc_t* aa, AiParams_t* param)
     aa->aiAttr.u32ChnCnt = param->channels;
     aa->aiAttr.enSamplerate = (AUDIO_SAMPLE_RATE_E)param->sampleRate;
     aa->aiAttr.enBitwidth = (AUDIO_BIT_WIDTH_E)(param->bitsPerSample/8-1);
+    if (param->hpfHz > 0)
+        aa->aiAttr.enSoundmode = param->channels == 2 ? AUDIO_SOUND_MODE_STEREO : AUDIO_SOUND_MODE_MONO;
 }
 
 static void ai2aenc_configAencAttr(Ai2Aenc_t* aa, AiParams_t* aiParam, AencParams_t* aeParam)
@@ -167,7 +169,7 @@ static void *ai2aenc_frameProc(void *pThreadData)
 
     LOGD("aenc thread: dev[%d] chn[%d] ae[%d]", aa->aiDev, aa->aiChn, aa->aeChn);
 
-    while (!aa->bExit)
+    while (!__atomic_load_n(&aa->bExit, __ATOMIC_ACQUIRE))
     {
         if (SUCCESS == AW_MPI_AENC_GetStream(aa->aeChn, &stream, 100/*0*/))
         {
@@ -184,6 +186,99 @@ static void *ai2aenc_frameProc(void *pThreadData)
     }
 
     LOGD("aenc thread exit");
+
+    return NULL;
+}
+
+#define AI2AENC_GETFRAME_TIMEOUT_MS 200
+#define AI2AENC_SEND_RETRIES        3
+
+// Only runs while the DSP is active (AI not bound to AENC): pull each PCM
+// frame, filter a private copy, hand it to the encoder with the original
+// timestamp/sequence, and always return the AI buffer.
+static void *ai2aenc_pcmProc(void *pThreadData)
+{
+    Ai2Aenc_t *aa = (Ai2Aenc_t *)pThreadData;
+    const int channels = aa->dsp.channels;
+    bool firstFrame = true;
+    bool warnedSize = false;
+
+    LOGD("pcm thread: dev[%d] chn[%d] ae[%d] hpf[%dHz]", aa->aiDev, aa->aiChn, aa->aeChn, aa->dsp.hpfHz);
+
+    while (!__atomic_load_n(&aa->bExit, __ATOMIC_ACQUIRE))
+    {
+        AUDIO_FRAME_S frm;
+        memset(&frm, 0, sizeof(frm));
+        ERRORTYPE ret = AW_MPI_AI_GetFrame(aa->aiDev, aa->aiChn, &frm, NULL, AI2AENC_GETFRAME_TIMEOUT_MS);
+        if (ret != SUCCESS) {
+            // Timeout / empty: bounded poll; back off on immediate errors.
+            usleep(1000);
+            continue;
+        }
+
+        if (firstFrame) {
+            firstFrame = false;
+            LOGI("first pcm frame: len=%u bitwidth=%d soundmode=%d ts=%llu seq=%u",
+                 frm.mLen, frm.mBitwidth, frm.mSoundmode, frm.mTimeStamp, frm.mSeq);
+        }
+
+        if (frm.mpAddr == NULL || frm.mLen == 0) {
+            aa->nbPcmDropped++;
+            audio_dsp_reset(&aa->dsp);
+            LOGE("empty PCM frame; dropping");
+            goto release_frame;
+        }
+
+        AUDIO_FRAME_S out = frm;
+        const size_t frameBytes = sizeof(int16_t) * (size_t)channels;
+        // The shipped libmedia_mpp copies mLen bytes to AENC (total bytes,
+        // despite the SDK's "per channel" comment). Never multiply mLen.
+        if (frm.mpAddr != NULL && frm.mLen > 0 &&
+            frm.mBitwidth == AUDIO_BIT_WIDTH_16 &&
+            frm.mSoundmode == (channels == 2 ? AUDIO_SOUND_MODE_STEREO : AUDIO_SOUND_MODE_MONO) &&
+            frm.mLen <= sizeof(aa->pcmScratch) && frm.mLen % frameBytes == 0) {
+            memcpy(aa->pcmScratch, frm.mpAddr, frm.mLen);
+            audio_dsp_process_s16(&aa->dsp, aa->pcmScratch, frm.mLen / frameBytes);
+            out.mpAddr = aa->pcmScratch;
+        } else {
+            // Unexpected layout: never corrupt audio, send it unfiltered.
+            aa->nbPcmPassthrough++;
+            audio_dsp_reset(&aa->dsp);
+            if (!warnedSize) {
+                warnedSize = true;
+                LOGW("pcm frame len %u not filterable (max %u), passing through",
+                     frm.mLen, (unsigned)sizeof(aa->pcmScratch));
+            }
+        }
+
+        // AENC copies the PCM into its own ring buffer (RequestWriteBuf),
+        // so the scratch buffer is free again once SendFrame returns.
+        int retries = 0;
+        while ((ret = AW_MPI_AENC_SendFrame(aa->aeChn, &out, NULL)) != SUCCESS &&
+               // This SDK returns generic FAILURE for a full ring buffer.
+               retries < AI2AENC_SEND_RETRIES &&
+               !__atomic_load_n(&aa->bExit, __ATOMIC_ACQUIRE)) {
+            retries++;
+            usleep(5000);
+        }
+        if (ret == SUCCESS) {
+            aa->nbPcmFrames++;
+        } else {
+            aa->nbPcmDropped++;
+            if (aa->nbPcmDropped == 1 || aa->nbPcmDropped % 100 == 0)
+                LOGE("aenc send frame failed 0x%x (dropped %u)", ret, aa->nbPcmDropped);
+        }
+
+release_frame:
+        ret = AW_MPI_AI_ReleaseFrame(aa->aiDev, aa->aiChn, &frm, NULL);
+        if (ret != SUCCESS) {
+            LOGE("AI release frame failed 0x%x; stopping PCM pump", ret);
+            break;
+        }
+    }
+
+    LOGD("pcm thread exit: frames=%u dropped=%u passthrough=%u",
+         aa->nbPcmFrames, aa->nbPcmDropped, aa->nbPcmPassthrough);
 
     return NULL;
 }
@@ -242,7 +337,17 @@ ERRORTYPE ai2aenc_prepare(Ai2Aenc_t* aa, AiParams_t* aiParams, AencParams_t* aeP
         return ret;
     }
 
-    if (aa->aiChn >= 0)
+    // Filtering needs the PCM in user space, so only bind AI->AENC directly
+    // when no processing is requested (the original, unchanged path).
+    aa->dspActive = false;
+    memset(&aa->dsp, 0, sizeof(aa->dsp));
+    if (aiParams->bitsPerSample == 16)
+    {
+        aa->dspActive = audio_dsp_configure(&aa->dsp, aiParams->sampleRate, aiParams->channels, aiParams->hpfHz);
+    }
+    LOGI("dvr audio dsp: %s (hpf=%d Hz)", aa->dspActive ? "on" : "off", aa->dsp.hpfHz);
+
+    if (aa->aiChn >= 0 && !aa->dspActive)
     {
         LOGD("bind ai & aenc");
         MPP_CHN_S AiChn = {MOD_ID_AI, aa->aiDev, aa->aiChn};
@@ -275,9 +380,29 @@ ERRORTYPE ai2aenc_start(Ai2Aenc_t* aa)
             return ret;
         }
 
-        aa->bExit = false;
-        pthread_create(&aa->threadId, NULL, ai2aenc_frameProc, aa);
+        __atomic_store_n(&aa->bExit, false, __ATOMIC_RELEASE);
+        if (pthread_create(&aa->threadId, NULL, ai2aenc_frameProc, aa) != 0) {
+            aa->threadId = 0;
+            LOGE("create aenc thread failed");
+            ai2aenc_stop(aa, false);
+            return FAILURE;
+        }
         LOGD("aenc pthread: dev[%d] chn[%d] aeChn[%d]", aa->aiDev, aa->aiChn, aa->aeChn);
+
+        if (aa->dspActive)
+        {
+            audio_dsp_reset(&aa->dsp);
+            aa->nbPcmFrames = 0;
+            aa->nbPcmDropped = 0;
+            aa->nbPcmPassthrough = 0;
+            if (pthread_create(&aa->pcmThreadId, NULL, ai2aenc_pcmProc, aa) != 0)
+            {
+                aa->pcmThreadId = 0;
+                LOGE("create pcm thread failed");
+                ai2aenc_stop(aa, false);
+                return FAILURE;
+            }
+        }
     }
 
     return ret;
@@ -287,11 +412,16 @@ ERRORTYPE ai2aenc_stop(Ai2Aenc_t* aa, bool disableDev)
 {
     LOGD("stop");
 
-    aa->bExit = true;
+    __atomic_store_n(&aa->bExit, true, __ATOMIC_RELEASE);
+    if( aa->pcmThreadId > 0 ) {
+        pthread_join(aa->pcmThreadId, NULL);
+        aa->pcmThreadId = 0;
+    }
     if( aa->threadId > 0 ) {
         pthread_join(aa->threadId, NULL);
         aa->threadId = 0;
     }
+    aa->dspActive = false;
 
     //stop
     if (aa->aiChn >= 0)

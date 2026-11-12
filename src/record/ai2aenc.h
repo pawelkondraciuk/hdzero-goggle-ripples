@@ -15,6 +15,8 @@ extern "C" {
 #include <mpi_aenc.h>
 #include <pthread.h>
 
+#include "audio_dsp.h"
+
 #define ADTS_HEADER__LEN 7
 
 typedef struct WaveHeader{
@@ -49,6 +51,7 @@ typedef struct
     int         channels;
     int         bitsPerSample;
     int         mFrameSize;
+    int         hpfHz;          // DVR high-pass corner, 0 = off (direct AI->AENC bind)
 } AiParams_t;
 
 typedef AIO_ATTR_S  AioAttr_t;
@@ -77,6 +80,17 @@ typedef struct
     void*       contextOfOnFrame;
 
     int64_t     startTimestamp;
+
+    // PCM filtering. When dspActive the AI channel is not bound to the
+    // encoder; ai2aenc_pcmProc pulls each frame, filters a copy and sends
+    // it to the AENC with the original timestamp.
+    bool        dspActive;
+    AudioDsp_t  dsp;
+    pthread_t   pcmThreadId;
+    unsigned    nbPcmFrames;
+    unsigned    nbPcmDropped;
+    unsigned    nbPcmPassthrough;
+    int16_t     pcmScratch[16384];  // 32 KiB; AI frames are ~1024 samples/ch
 } Ai2Aenc_t;
 
 Ai2Aenc_t* ai2aenc_initSys(CB_onAencFrame cbOnFrame, void* context);

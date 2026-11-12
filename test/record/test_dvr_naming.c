@@ -6,6 +6,9 @@
 #include <unistd.h>
 #include <sys/msg.h>
 #include <sys/wait.h>
+#if defined(__linux__)
+#include <sys/vfs.h>
+#endif
 
 #include "driver/rtc.h"
 
@@ -38,6 +41,7 @@ uint8_t Display_Osd_Readback(void) { return 0; }
 
 static struct rtc_date current_clock;
 static int clock_valid = 1;
+static int recording_hpf;
 static int naming_writes;
 static int recording_naming;
 static char recording_type[8];
@@ -52,6 +56,7 @@ int test_has_valid_date(const struct rtc_date *rd) {
 }
 
 int ini_putl(const char *section, const char *key, long value, const char *filename) {
+    if (!strcmp(section, "record") && !strcmp(key, "audio_hpf_hz")) recording_hpf = value;
     if (strcmp(section, "venc") == 0) {
         if (!strcmp(key, "fps")) encoder_fps = value;
         if (!strcmp(key, "h265")) encoder_h265 = value;
@@ -208,6 +213,16 @@ int main(void) {
     const struct rtc_date synced = {
         .year = 2026, .month = 10, .day = 7, .hour = 12, .min = 30,
     };
+
+    g_setting.record.audio_hpf_hz = 120;
+    dvr_snapshot_t audio_snapshot = dvr_snapshot();
+    g_setting.record.audio_hpf_hz = 200;
+    config_ok = true;
+    assert(dvr_update_record_conf(&audio_snapshot));
+    assert(recording_hpf == 120); // An accepted recording keeps its own DSP setting.
+    g_setting.record.audio_hpf_hz = 0;
+    audio_snapshot = dvr_snapshot();
+    assert(dvr_update_record_conf(&audio_snapshot) && recording_hpf == 0);
 
     g_setting.record.naming = SETTING_NAMING_DATE;
     current_clock = unset;

@@ -37,6 +37,16 @@
 
 static btn_group_t btn_group_record_audio;
 static btn_group_t btn_group_audio_source;
+static lv_obj_t *hpf_value;
+static const int hpf_values[] = {0, 80, 120, 160, 200};
+static const char *hpf_names[] = {"Off", "80 Hz", "120 Hz", "160 Hz", "200 Hz"};
+
+static int hpf_index(void) {
+    for (int i = 0; i < 5; i++)
+        if (g_setting.record.audio_hpf_hz == hpf_values[i])
+            return i;
+    return 0;
+}
 static slider_group_t slider_group_dvr_audio_volume;
 static slider_group_t slider_group_live_audio_volume;
 static slider_group_t slider_group_mic_gain;
@@ -49,6 +59,7 @@ static lv_obj_t *test_fill[AUDIO_TEST_COUNT];
 enum {
     ROW_RECORD_AUDIO = 0,
     ROW_AUDIO_SOURCE,
+    ROW_DVR_HPF,
     ROW_VOLUME_HEADER,
     ROW_DVR_AUDIO_VOLUME,
     ROW_LIVE_AUDIO_VOLUME,
@@ -162,6 +173,8 @@ static lv_obj_t *page_audio_create(lv_obj_t *parent, panel_arr_t *arr) {
 
     create_btn_group_item(&btn_group_record_audio, cont, 2, _lang("Record Audio"), _lang("Yes"), _lang("No"), "", "", ROW_RECORD_AUDIO);
     create_btn_group_item(&btn_group_audio_source, cont, 3, _lang("Audio Source"), _lang("Mic"), _lang("Line In"), _lang("A/V In"), "", ROW_AUDIO_SOURCE);
+    create_label_item(cont, _lang("DVR High-Pass"), 1, ROW_DVR_HPF, 1);
+    hpf_value = create_label_item(cont, _lang(hpf_names[hpf_index()]), 2, ROW_DVR_HPF, 3);
     snprintf(buf, sizeof(buf), "%s:", _lang("Volume Control"));
     create_label_item(cont, buf, 0, ROW_VOLUME_HEADER, 2);
     create_label_item(cont, _lang("Run Test"), 1, ROW_RUN_TEST, 1);
@@ -645,6 +658,11 @@ static void page_audio_on_click(uint8_t key, int sel) {
         btn_group_toggle_sel(&btn_group_audio_source);
         g_setting.record.audio_source = btn_group_get_sel(&btn_group_audio_source);
         ini_putl("record", "audio_source", g_setting.record.audio_source, SETTING_INI);
+    } else if (sel == ROW_DVR_HPF) {
+        int next = (hpf_index() + 1) % 5;
+        g_setting.record.audio_hpf_hz = hpf_values[next];
+        lv_label_set_text(hpf_value, _lang(hpf_names[next]));
+        ini_putl("record", "audio_hpf_hz", g_setting.record.audio_hpf_hz, SETTING_INI);
     } else if (sel == ROW_RUN_TEST) {
         if (audio_test_running || dvr_is_recording)
             return;

@@ -437,6 +437,7 @@ static bool dvr_update_record_conf(const dvr_snapshot_t *snapshot) {
     }
 
     dvr_ini_putl("record", "audio", snapshot->record.audio, config_file);
+    dvr_ini_putl("record", "audio_hpf_hz", snapshot->record.audio_hpf_hz, config_file);
     dvr_select_audio_values(snapshot->record.audio_source, snapshot->record.mic_gain, snapshot->record.linein_gain);
     // An unset clock only changes this recording, not the saved preference.
     // Recheck at each start so a later clock sync enables Date naming again.

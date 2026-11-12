@@ -130,7 +130,7 @@ extern "C" {
 #define UI_RECORD_COLS                    160, 200, 200, 160, 120, 120, LV_GRID_TEMPLATE_LAST
 #define UI_RECORD_ROWS                    60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, LV_GRID_TEMPLATE_LAST
 #define UI_AUDIO_COLS                     160, 200, 200, 160, 120, 120, LV_GRID_TEMPLATE_LAST
-#define UI_AUDIO_ROWS                     50, 50, 50, 50, 50, 50, 50, 50, 50, 50, LV_GRID_TEMPLATE_LAST
+#define UI_AUDIO_ROWS                     45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, LV_GRID_TEMPLATE_LAST
 #define UI_AUDIO_TEST_BUTTON_WIDTH        122
 #define UI_AUDIO_TEST_BUTTON_HEIGHT       40
 #define UI_AUDIO_TEST_BUTTON_GAP          12
@@ -287,7 +287,7 @@ static inline int UI_STATUS_BAR_LABEL_WIDTH() {
 #define UI_RECORD_COLS                    106, 132, 132, 106, 80, 80, LV_GRID_TEMPLATE_LAST
 #define UI_RECORD_ROWS                    40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, LV_GRID_TEMPLATE_LAST
 #define UI_AUDIO_COLS                     106, 132, 132, 106, 80, 80, LV_GRID_TEMPLATE_LAST
-#define UI_AUDIO_ROWS                     36, 36, 36, 36, 36, 36, 36, 36, 36, 36, LV_GRID_TEMPLATE_LAST
+#define UI_AUDIO_ROWS                     32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, LV_GRID_TEMPLATE_LAST
 #define UI_AUDIO_TEST_BUTTON_WIDTH        84
 #define UI_AUDIO_TEST_BUTTON_HEIGHT       28
 #define UI_AUDIO_TEST_BUTTON_GAP          8

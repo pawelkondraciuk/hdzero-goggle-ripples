@@ -168,6 +168,7 @@ void record_dumpAiParams(AiParams_t *params) {
     LOGD("sample rate : %d", params->sampleRate);
     LOGD("channels    : %d", params->channels);
     LOGD("sample bits : %d", params->bitsPerSample);
+    LOGD("hpf         : %d Hz", params->hpfHz);
 }
 
 void record_saveStatus(RecordContext_t *recCtx, RecordStatus_e recStatus) {

@@ -43,6 +43,7 @@ void rec_dbg_log(const char* fmt, ...)
 #define KEY_ROLLING     "rolling"
 #define KEY_NAMING      "naming"
 #define KEY_LABEL       "label"
+#define KEY_audioHPF    "audio_hpf_hz"
 
 #define KEY_WIDTH       "width"
 #define KEY_HEIGHT      "height"
@@ -519,6 +520,11 @@ void conf_loadAiParams(char* confFile, AiParams_t* para)
 
     lValue = ini_getl(SEC_AI, KEY_sampleBITS, AI_sampleBITS, confFile);
     para->bitsPerSample = check_set(lValue, (AUDIO_BIT_WIDTH_8+1)*8, (AUDIO_BIT_WIDTH_32+1)*8);
+
+    // DVR audio processing. Missing key (older app/config) or an unknown
+    // value means off, which keeps the original AI->AENC bind.
+    lValue = ini_getl(SEC_RECORD, KEY_audioHPF, 0, confFile);
+    para->hpfHz = audio_dsp_hpf_valid((int)lValue) ? (int)lValue : 0;
 }
 
 void conf_saveAiParams(char* confFile, AiParams_t* para)
