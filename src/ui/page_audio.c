@@ -59,12 +59,12 @@ static lv_obj_t *test_fill[AUDIO_TEST_COUNT];
 enum {
     ROW_RECORD_AUDIO = 0,
     ROW_AUDIO_SOURCE,
-    ROW_DVR_HPF,
     ROW_VOLUME_HEADER,
     ROW_DVR_AUDIO_VOLUME,
     ROW_LIVE_AUDIO_VOLUME,
     ROW_MIC_GAIN,
     ROW_LINEIN_GAIN,
+    ROW_DVR_HPF,
     ROW_RUN_TEST, // last item of the Volume Control section
     ROW_BACK,
     ROW_NOTE,
@@ -173,15 +173,6 @@ static lv_obj_t *page_audio_create(lv_obj_t *parent, panel_arr_t *arr) {
 
     create_btn_group_item(&btn_group_record_audio, cont, 2, _lang("Record Audio"), _lang("Yes"), _lang("No"), "", "", ROW_RECORD_AUDIO);
     create_btn_group_item(&btn_group_audio_source, cont, 3, _lang("Audio Source"), _lang("Mic"), _lang("Line In"), _lang("A/V In"), "", ROW_AUDIO_SOURCE);
-    create_slider_item(&slider_group_dvr_hpf, cont, _lang("DVR High-Pass"), 4, hpf_index(), ROW_DVR_HPF);
-    lv_obj_set_grid_cell(slider_group_dvr_hpf.name, LV_GRID_ALIGN_START, 1, 1,
-                         LV_GRID_ALIGN_CENTER, ROW_DVR_HPF, 1);
-    lv_obj_set_grid_cell(slider_group_dvr_hpf.slider, LV_GRID_ALIGN_STRETCH, 2, 3,
-                         LV_GRID_ALIGN_CENTER, ROW_DVR_HPF, 1);
-    lv_obj_set_grid_cell(slider_group_dvr_hpf.label, LV_GRID_ALIGN_START, 5, 1,
-                         LV_GRID_ALIGN_CENTER, ROW_DVR_HPF, 1);
-    lv_obj_set_width(slider_group_dvr_hpf.label, LV_SIZE_CONTENT);
-    lv_label_set_text(slider_group_dvr_hpf.label, _lang(hpf_names[hpf_index()]));
     snprintf(buf, sizeof(buf), "%s:", _lang("Volume Control"));
     create_label_item(cont, buf, 0, ROW_VOLUME_HEADER, 2);
     create_label_item(cont, _lang("Run Test"), 1, ROW_RUN_TEST, 1);
@@ -230,6 +221,15 @@ static lv_obj_t *page_audio_create(lv_obj_t *parent, panel_arr_t *arr) {
                          LV_GRID_ALIGN_CENTER, ROW_LINEIN_GAIN, 1);
     lv_obj_set_grid_cell(slider_group_linein_gain.label, LV_GRID_ALIGN_START, 5, 1,
                          LV_GRID_ALIGN_CENTER, ROW_LINEIN_GAIN, 1);
+    create_slider_item(&slider_group_dvr_hpf, cont, _lang("DVR High-Pass"), 4, hpf_index(), ROW_DVR_HPF);
+    lv_obj_set_grid_cell(slider_group_dvr_hpf.name, LV_GRID_ALIGN_START, 1, 1,
+                         LV_GRID_ALIGN_CENTER, ROW_DVR_HPF, 1);
+    lv_obj_set_grid_cell(slider_group_dvr_hpf.slider, LV_GRID_ALIGN_STRETCH, 2, 3,
+                         LV_GRID_ALIGN_CENTER, ROW_DVR_HPF, 1);
+    lv_obj_set_grid_cell(slider_group_dvr_hpf.label, LV_GRID_ALIGN_START, 5, 1,
+                         LV_GRID_ALIGN_CENTER, ROW_DVR_HPF, 1);
+    lv_obj_set_width(slider_group_dvr_hpf.label, LV_SIZE_CONTENT);
+    lv_label_set_text(slider_group_dvr_hpf.label, _lang(hpf_names[hpf_index()]));
     snprintf(buf, sizeof(buf), "< %s", _lang("Back"));
     create_label_item(cont, buf, 1, ROW_BACK, 1);
     lv_obj_t *note = lv_label_create(cont);
