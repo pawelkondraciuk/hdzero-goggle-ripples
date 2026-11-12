@@ -1,8 +1,9 @@
-# DVR High-Pass (P0), BoxPro
+# DVR High-Pass (P0) i Voice Clarity (P1), BoxPro
 
 Gałąź `feat/dvr-audio-dsp` pochodzi z `main` (4fbb865), zgodnie z decyzją
 użytkownika: zawiera poprawki DVR dodane po `ripples-v1.2.2`. Nie nadpisuje tagu
-ani oficjalnego firmware. P1 / Voice Clarity nie jest częścią tej implementacji.
+ani oficjalnego firmware. P0 i P1 znajdują się w jednym pakiecie, jako osobne
+etapy implementacji i commity.
 
 ## Użycie
 
@@ -15,6 +16,37 @@ ustawień jako `[record] audio_hpf_hz`. Starszy plik lub nieprawidłowa wartoś�
 oznacza Off. Zmiana podczas nagrania dotyczy następnego klipu: DVR przekazuje
 wartość z zaakceptowanego snapshotu do prywatnego `record.conf`.
 
+## Voice Clarity
+
+Suwak `Voice Clarity` jest pod HPF, w Volume Control: Off / Low / Medium / High.
+Ustawienie `[record] audio_clarity=0..3` zapisuje się w istniejącej konfiguracji
+oraz trafia ze snapshotu do rejestratora. Domyślnie 0, brak lub błędna wartość
+również oznacza Off. Zmiana działa od następnego klipu. Clarity może działać
+bez HPF; wyłączenie obu zachowuje bezpośredni binding AI → AENC.
+
+Dwa peaking EQ RBJ, współczynniki liczone raz na nagranie:
+
+| Parametr | Low | Medium | High |
+|---|---:|---:|---:|
+| 300 Hz, Q=0,8 | −1,5 dB | −3 dB | −5 dB |
+| 3,5 kHz, Q=0,9 | +1 dB | +2 dB | +3 dB |
+| Stały zapas poziomu przed EQ | −1 dB | −2 dB | −3 dB |
+
+Podane pasma opisują EQ względem poziomu po zastosowaniu zapasu. Absolutnie
+300 Hz będzie obniżone o około 2,5/5/8 dB, a poziom 3,5 kHz pozostaje bliski
+wejściowemu. Nagranie może być nieco cichsze. To stałe wzmocnienie, bez AGC,
+odszumiania, bramki czy selekcji rozmówców. Saturacja S16 zabezpiecza końcową
+konwersję; zapas zmniejsza ryzyko clippingu po EQ, ale nie gwarantuje braku
+przesterowania każdego impulsu ani nie naprawia clippingu w ADC.
+
+Pominięto opcjonalny high-shelf, żeby ograniczyć podbijanie szumu i zmianę
+barwy otoczenia. Maksymalnie trzy biquady z aktywnym HPF, bez dodatkowych
+alokacji i wątków. Wszystkie stany są osobne dla kanałów i zerowane na nowy klip.
+Charakterystyka została sprawdzona numerycznie, lecz poprawę czytelności i
+naturalność nagrań ambientowych trzeba ocenić odsłuchowo na BoxPro. Zacznij
+porównanie od HPF 120 Hz i Clarity Low, następnie porównaj Medium przy
+wyrównanej głośności odsłuchu. To ustawienia do prób, nie wynik testu sprzętu.
+
 ## Tor audio i decyzje
 
 W bazowym kodzie `ai2aenc_prepare` wiąże kanał AI z AENC przez
@@ -22,7 +54,8 @@ W bazowym kodzie `ai2aenc_prepare` wiąże kanał AI z AENC przez
 Live audio oraz odtwarzanie plików mają osobne ścieżki. Menu Run Test na BoxPro
 używa `arecord`; nie testuje tego filtra ani ścieżki AAC/DVR.
 
-Off zachowuje binding AI → AENC. Włączenie HPF zastępuje wyłącznie to połączenie
+Oba ustawienia Off zachowują binding AI → AENC. Włączenie HPF lub Clarity
+zastępuje wyłącznie to połączenie
 wątkiem GetFrame → kopia PCM → DSP → SendFrame → ReleaseFrame. DSP to biquad
 Butterwortha drugiego rzędu, Q=1/√2, współczynniki wyliczane raz przy konfiguracji.
 Próbki są S16 interleaved, osobny stan dla każdego kanału, saturacja do int16.
@@ -97,16 +130,18 @@ make -C test/audio_dsp run asan pump
 make -C test/record run run_record_control
 ```
 
-43 asercje DSP: Off bit-identical, wszystkie częstotliwości odcięcia,
+90 asercji DSP: Off bit-identical, wszystkie częstotliwości odcięcia,
 40/120/1000 Hz, impuls, cisza, saturacja bez przepełnień, niezależne stereo,
-reset, błędne parametry i godzina symulowanego PCM. Dla HPF 120 Hz / 48 kHz:
+reset, błędne parametry i po godzinie symulowanego PCM dla HPF oraz HPF+Clarity High. Dla HPF 120 Hz / 48 kHz:
 40 Hz −19,14 dB, 120 Hz −3,01 dB, 1 kHz −0,001 dB. ASan/UBSan sprawdzają
 pamięć i niezdefiniowane operacje. Godzina PCM nie jest godziną testu sprzętu.
 
 Test pump używa rzeczywistych deklaracji SDK i mocków MPI: prywatna kopia,
 mono/stereo, zachowanie timestampów, retry po FAILURE, timeout, odrzucenie po
 wyczerpaniu prób i zabezpieczenia formatu. Nie dowodzi działania binariów MPP.
-Regresje DVR obejmują przekazanie HPF ze snapshotu oraz Off.
+Regresje DVR obejmują przekazanie HPF i Clarity ze snapshotu oraz Off.
+Testy Clarity mierzą 300/3500 Hz przy 8/44,1/48 kHz dla wszystkich poziomów,
+współdziałanie z HPF, reset, stereo, głośny sygnał i powrót do ciszy.
 
 ## Build BoxPro
 
@@ -134,14 +169,17 @@ Bootlin ARM toolchain; setup usuwa wcześniejsze katalogi `build_*`.
 7. Głośna mowa i drony: brak trzasków; ocenić naturalność otoczenia w hali i na
    zewnątrz z Saramonic SR-LMX1+, Line/AV Gain 3. HPF nie naprawi przesterowania
    analogowego ani tłumienia góry przez umiejscowienie mikrofonu za uchem.
-8. Sprawdzić czytelność i nawigację menu 600 px, w tym wszystkie testy i Back.
+8. Clarity Off/Low/Medium/High z HPF oraz bez HPF: porównać mowę innych
+   pilotów, własną mowę, drony i tło przy wyrównanej głośności odsłuchu;
+   sprawdzić brak szorstkości, clippingu i wyciszania otoczenia.
+9. Sprawdzić czytelność i nawigację menu 600 px, w tym wszystkie testy i Back.
 
 Nie wykonano testów na fizycznym urządzeniu. Narzut CPU, stabilność MPP i brak
 A/V drift pozostają do zmierzenia; nie są gwarantowane przez testy hosta.
 
 ## Cofnięcie
 
-Wybierz Off i rozpocznij nowy klip, aby wrócić do bindingu. Dla pełnego cofnięcia
+Wybierz Off w HPF i Voice Clarity i rozpocznij nowy klip, aby wrócić do bindingu. Dla pełnego cofnięcia
 wgraj zachowany oryginalny pakiet BoxPro standardową procedurą aktualizacji
 producenta. Nowy klucz jest ignorowany przez starszy firmware; kopia ustawień
 pozwala odtworzyć konfigurację. Nie zmieniono bootloadera ani procedury update.
@@ -150,12 +188,12 @@ pozwala odtworzyć konfigurację. Nie zmieniono bootloadera ani procedury update
 
 - `src/record/audio_dsp.c`, `.h`: czysty DSP bez zależności od MPP.
 - `src/record/ai2aenc.c`, `.h`: pump PCM, bufor, reset, liczniki i lifecycle.
-- `src/record/confparser.c`, `record.conf`: odczyt HPF z walidacją, domyślne Off.
-- `src/record/main.c`: HPF w logu parametrów nagrania.
+- `src/record/confparser.c`, `record.conf`: odczyt HPF i Clarity z walidacją, domyślne Off.
+- `src/record/main.c`: HPF i Clarity w logu parametrów nagrania.
 - `src/core/settings.c`, `.h`: trwałe ustawienie i walidacja starszych plików.
-- `src/core/dvr.c`: przekazanie HPF ze snapshotu do konfiguracji rejestratora.
-- `src/ui/page_audio.c`, `conf/ui.h`: wybór HPF i dodatkowy wiersz menu.
+- `src/core/dvr.c`: przekazanie HPF i Clarity ze snapshotu do konfiguracji rejestratora.
+- `src/ui/page_audio.c`, `conf/ui.h`: suwaki HPF i Clarity oraz układ menu.
 - `test/audio_dsp/*`, `.gitignore`: testy DSP i pump, Makefile, ignorowane pliki wykonywalne.
-- `test/record/test_dvr_naming.c`: snapshot HPF i poprawka nagłówka testu Linux.
+- `test/record/test_dvr_naming.c`: snapshot HPF/Clarity i poprawka nagłówka testu Linux.
 - `.github/workflows/build_and_release_boxpro.yml`: testy hosta przed buildem.
 - `docs/dvr-audio-hpf.md`: architektura, użycie, build, testy sprzętowe i rollback.

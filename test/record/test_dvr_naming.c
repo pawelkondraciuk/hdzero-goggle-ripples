@@ -41,7 +41,7 @@ uint8_t Display_Osd_Readback(void) { return 0; }
 
 static struct rtc_date current_clock;
 static int clock_valid = 1;
-static int recording_hpf;
+static int recording_hpf, recording_clarity;
 static int naming_writes;
 static int recording_naming;
 static char recording_type[8];
@@ -57,6 +57,7 @@ int test_has_valid_date(const struct rtc_date *rd) {
 
 int ini_putl(const char *section, const char *key, long value, const char *filename) {
     if (!strcmp(section, "record") && !strcmp(key, "audio_hpf_hz")) recording_hpf = value;
+    if (!strcmp(section, "record") && !strcmp(key, "audio_clarity")) recording_clarity = value;
     if (strcmp(section, "venc") == 0) {
         if (!strcmp(key, "fps")) encoder_fps = value;
         if (!strcmp(key, "h265")) encoder_h265 = value;
@@ -215,14 +216,18 @@ int main(void) {
     };
 
     g_setting.record.audio_hpf_hz = 120;
+    g_setting.record.audio_clarity = 2;
     dvr_snapshot_t audio_snapshot = dvr_snapshot();
     g_setting.record.audio_hpf_hz = 200;
+    g_setting.record.audio_clarity = 3;
     config_ok = true;
     assert(dvr_update_record_conf(&audio_snapshot));
+    assert(recording_clarity == 2);
     assert(recording_hpf == 120); // An accepted recording keeps its own DSP setting.
     g_setting.record.audio_hpf_hz = 0;
+    g_setting.record.audio_clarity = 0;
     audio_snapshot = dvr_snapshot();
-    assert(dvr_update_record_conf(&audio_snapshot) && recording_hpf == 0);
+    assert(dvr_update_record_conf(&audio_snapshot) && recording_hpf == 0 && recording_clarity == 0);
 
     g_setting.record.naming = SETTING_NAMING_DATE;
     current_clock = unset;

@@ -54,9 +54,9 @@ static double rms(const int16_t *buf, size_t n, int channels, int ch) {
 
 // Steady-state gain in dB of a mono sine through the DSP, processed in
 // recorder-sized frames.
-static double measure_gain_db(int fs, int hpf, double f) {
+static double measure_gain_db_clarity(int fs, int hpf, int clarity, double f) {
     AudioDsp_t dsp;
-    audio_dsp_configure(&dsp, fs, 1, hpf);
+    audio_dsp_configure(&dsp, fs, 1, hpf, clarity);
     const size_t total = (size_t)fs * 3, settle = (size_t)fs * 2;
     int16_t *in = malloc(total * sizeof(int16_t));
     int16_t *out = malloc(total * sizeof(int16_t));
@@ -70,6 +70,10 @@ static double measure_gain_db(int fs, int hpf, double f) {
     free(in);
     free(out);
     return g;
+}
+
+static double measure_gain_db(int fs, int hpf, double f) {
+    return measure_gain_db_clarity(fs, hpf, 0, f);
 }
 
 static void test_hpf_response(void) {
@@ -108,7 +112,7 @@ static void test_hpf_response(void) {
 // 4. Impulse: bounded, decays to exact zero (no limit cycle / instability).
 static void test_impulse(void) {
     AudioDsp_t dsp;
-    audio_dsp_configure(&dsp, FS, 1, 120);
+    audio_dsp_configure(&dsp, FS, 1, 120, 0);
     const size_t n = FS; // 1 s
     int16_t *buf = calloc(n, sizeof(int16_t));
     buf[0] = 32767;
@@ -131,7 +135,7 @@ static void test_impulse(void) {
 // 5. Silence stays digital silence.
 static void test_silence(void) {
     AudioDsp_t dsp;
-    audio_dsp_configure(&dsp, FS, 2, 200);
+    audio_dsp_configure(&dsp, FS, 2, 200, 0);
     int16_t buf[FRAME * 2];
     long nz = 0;
     for (int k = 0; k < 500; k++) {
@@ -164,7 +168,7 @@ static void reference(const AudioDsp_t *cfg, const int16_t *in, double *out, siz
 // everywhere else.
 static void test_saturation(void) {
     AudioDsp_t dsp;
-    audio_dsp_configure(&dsp, FS, 1, 200);
+    audio_dsp_configure(&dsp, FS, 1, 200, 0);
     const size_t n = FS;
     int16_t *buf = malloc(n * sizeof(int16_t));
     double *ref = malloc(n * sizeof(double));
@@ -200,16 +204,16 @@ static void test_off(void) {
         orig[i] = (int16_t)(rand() & 0xffff);
     for (size_t k = 0; k < sizeof(settings) / sizeof(settings[0]); k++) {
         AudioDsp_t dsp;
-        bool active = audio_dsp_configure(&dsp, FS, 1, settings[k]);
+        bool active = audio_dsp_configure(&dsp, FS, 1, settings[k], 0);
         memcpy(buf, orig, sizeof(buf));
         audio_dsp_process_s16(&dsp, buf, FRAME);
         CHECK(!active, "hpf=%d should be inactive", settings[k]);
         CHECK(memcmp(buf, orig, sizeof(buf)) == 0, "hpf=%d modified the signal", settings[k]);
     }
     AudioDsp_t dsp;
-    CHECK(!audio_dsp_configure(&dsp, FS, 3, 120), "3 channels must be rejected");
-    CHECK(!audio_dsp_configure(&dsp, FS, 0, 120), "0 channels must be rejected");
-    CHECK(!audio_dsp_configure(&dsp, 0, 1, 120), "0 Hz sample rate must be rejected");
+    CHECK(!audio_dsp_configure(&dsp, FS, 3, 120, 0), "3 channels must be rejected");
+    CHECK(!audio_dsp_configure(&dsp, FS, 0, 120, 0), "0 channels must be rejected");
+    CHECK(!audio_dsp_configure(&dsp, 0, 1, 120, 0), "0 Hz sample rate must be rejected");
     CHECK(audio_dsp_hpf_valid(0) && audio_dsp_hpf_valid(80) && audio_dsp_hpf_valid(200) &&
               !audio_dsp_hpf_valid(100),
           "hpf validation");
@@ -218,7 +222,7 @@ static void test_off(void) {
 // Stereo: channels filtered independently, interleaving respected.
 static void test_stereo(void) {
     AudioDsp_t dsp;
-    audio_dsp_configure(&dsp, FS, 2, 120);
+    audio_dsp_configure(&dsp, FS, 2, 120, 0);
     const size_t n = FS * 2, settle = FS;
     int16_t *in = malloc(n * 2 * sizeof(int16_t));
     int16_t *out = malloc(n * 2 * sizeof(int16_t));
@@ -244,21 +248,21 @@ static void test_reset(void) {
     memcpy(b, a, sizeof(a));
 
     AudioDsp_t used, fresh;
-    audio_dsp_configure(&used, FS, 1, 160);
+    audio_dsp_configure(&used, FS, 1, 160, 0);
     audio_dsp_process_s16(&used, warm, FRAME);
     audio_dsp_reset(&used);
     audio_dsp_process_s16(&used, a, FRAME);
 
-    audio_dsp_configure(&fresh, FS, 1, 160);
+    audio_dsp_configure(&fresh, FS, 1, 160, 0);
     audio_dsp_process_s16(&fresh, b, FRAME);
     CHECK(memcmp(a, b, sizeof(a)) == 0, "reset did not clear filter history");
 }
 
 // 8. Long run: one hour of audio in recorder-sized frames. Gain must not
 // drift, state must stay finite, and the tail must settle back to silence.
-static void test_long_run(void) {
+static void test_long_run(int clarity) {
     AudioDsp_t dsp;
-    audio_dsp_configure(&dsp, FS, 1, 120);
+    audio_dsp_configure(&dsp, FS, 1, 120, clarity);
     int16_t buf[FRAME];
     const size_t frames = (size_t)FS * 3600 / FRAME;
     unsigned seed = 12345;
@@ -289,21 +293,84 @@ static void test_long_run(void) {
             for (int i = 0; i < FRAME; i++)
                 nz += buf[i] != 0;
     }
-    printf("long run (1 h): frame RMS start %.1f, end %.1f, settled non-zero %ld\n", first, last, nz);
+    printf("long run (1 h, clarity=%d): frame RMS start %.1f, end %.1f, settled non-zero %ld\n", clarity, first, last, nz);
     CHECK(finite, "filter state not finite after 1 h");
     CHECK(fabs(db(last / first)) < 0.1, "level drifted: %.1f -> %.1f", first, last);
     CHECK(nz == 0, "tail did not return to silence: %ld", nz);
 }
 
+static void test_clarity(void) {
+    const double cuts[] = {0, -1.5, -3, -5};
+    const int rates[] = {8000, 44100, 48000};
+    for (int r = 0; r < 3; r++) {
+        for (int level = 1; level <= 3; level++) {
+            double low = measure_gain_db_clarity(rates[r], 0, level, 300);
+            double presence = measure_gain_db_clarity(rates[r], 0, level, 3500);
+            double bass = measure_gain_db_clarity(rates[r], 120, level, 40);
+            printf("Clarity %d @%d: 300Hz %.2f dB, 3500Hz %.2f dB, HPF+40Hz %.2f dB\n",
+                   level, rates[r], low, presence, bass);
+            CHECK(fabs(low - (cuts[level] - level)) < 0.08, "low-mid EQ response");
+            CHECK(fabs(presence) < 0.08, "presence boost must include fixed headroom");
+            CHECK(presence - low > level * 2, "speech presence relative to low-mid");
+            CHECK(bass < -19.0 - level, "combined HPF/clarity bass attenuation");
+        }
+    }
+    CHECK(audio_dsp_clarity_valid(0) && audio_dsp_clarity_valid(3) &&
+          !audio_dsp_clarity_valid(-1) && !audio_dsp_clarity_valid(4), "clarity validation");
+    AudioDsp_t dsp, fresh;
+    int16_t block[2048], reference[2048];
+    CHECK(!audio_dsp_configure(&dsp, FS, 1, 0, 99), "invalid clarity defaults off");
+    CHECK(audio_dsp_configure(&dsp, FS, 2, 0, 3), "clarity works independently of HPF");
+    CHECK(dsp.nbStages == 2 && dsp.inputGain < 1, "EQ stages and headroom");
+    for (int i = 0; i < 1024; i++) { block[2*i] = 32767; block[2*i+1] = 0; }
+    audio_dsp_process_s16(&dsp, block, 1024);
+    bool silent_right = true;
+    for (int i = 0; i < 1024; i++) silent_right &= block[2*i+1] == 0;
+    CHECK(silent_right, "clarity channel states must be independent");
+    audio_dsp_reset(&dsp);
+    audio_dsp_configure(&fresh, FS, 2, 0, 3);
+    memset(block, 0, sizeof(block)); block[0] = 32767; block[1] = -32768;
+    memcpy(reference, block, sizeof(block));
+    audio_dsp_process_s16(&dsp, block, 1024);
+    audio_dsp_process_s16(&fresh, reference, 1024);
+    CHECK(!memcmp(block, reference, sizeof(block)), "clarity reset between recordings");
+    // Combined chain: full-scale deterministic broadband input, then silence.
+    audio_dsp_configure(&dsp, FS, 2, 200, 3);
+    unsigned noise = 1;
+    for (int k = 0; k < 500; k++) {
+        for (int i = 0; i < 2048; i++) {
+            noise = noise * 1664525u + 1013904223u;
+            block[i] = (int16_t)(noise >> 16);
+        }
+        audio_dsp_process_s16(&dsp, block, 1024);
+    }
+    for (int k = 0; k < 200; k++) {
+        memset(block, 0, sizeof(block));
+        audio_dsp_process_s16(&dsp, block, 1024);
+    }
+    bool silence = true, finite = true;
+    for (int i = 0; i < 2048; i++) silence &= block[i] == 0;
+    for (int st = 0; st < dsp.nbStages; st++)
+        for (int ch = 0; ch < 2; ch++)
+            finite &= isfinite(dsp.z1[st][ch]) && isfinite(dsp.z2[st][ch]);
+    CHECK(silence && finite, "combined loud-signal stability and decay to silence");
+    audio_dsp_configure(&dsp, FS, 2, 0, 0);
+    for (int i = 0; i < 2048; i++) block[i] = reference[i] = (int16_t)i;
+    audio_dsp_process_s16(&dsp, block, 1024);
+    CHECK(!memcmp(block, reference, sizeof(block)), "both filters Off after reconfiguration");
+}
+
 int main(void) {
     test_hpf_response();
+    test_clarity();
     test_impulse();
     test_silence();
     test_saturation();
     test_off();
     test_stereo();
     test_reset();
-    test_long_run();
+    test_long_run(0);
+    test_long_run(3);
     printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

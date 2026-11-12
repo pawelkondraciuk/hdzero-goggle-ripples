@@ -42,7 +42,7 @@ ERRORTYPE AW_MPI_AI_ReleaseFrame(AUDIO_DEV dev, AI_CHN chn, AUDIO_FRAME_S *out, 
 
 static void setup(int channels) {
     memset(&aa, 0, sizeof(aa));
-    assert(audio_dsp_configure(&aa.dsp, 48000, channels, 120));
+    assert(audio_dsp_configure(&aa.dsp, 48000, channels, 120, 0));
     for (int i = 0; i < 2048; i++) input[i] = 16000;
     memcpy(original, input, sizeof(input));
     frame = (AUDIO_FRAME_S){.mpAddr = input, .mLen = sizeof(input),
@@ -66,6 +66,9 @@ int main(void) {
     assert(releases == 1 && aa.nbPcmPassthrough == 1);
     setup(1); frame.mSoundmode = AUDIO_SOUND_MODE_STEREO; expect_filtered = false; ai2aenc_pcmProc(&aa);
     assert(releases == 1 && aa.nbPcmPassthrough == 1);
+    setup(1); assert(audio_dsp_configure(&aa.dsp, 48000, 1, 0, 3));
+    ai2aenc_pcmProc(&aa);
+    assert(sends == 1 && releases == 1 && aa.nbPcmFrames == 1);
     setup(1); frame.mpAddr = NULL; ai2aenc_pcmProc(&aa);
     assert(sends == 0 && releases == 1 && aa.nbPcmDropped == 1);
     puts("PCM pump: mono/stereo, timestamps, private copy, timeout, retry, drop and format guards passed");

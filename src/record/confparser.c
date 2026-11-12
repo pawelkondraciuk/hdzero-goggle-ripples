@@ -525,6 +525,8 @@ void conf_loadAiParams(char* confFile, AiParams_t* para)
     // value means off, which keeps the original AI->AENC bind.
     lValue = ini_getl(SEC_RECORD, KEY_audioHPF, 0, confFile);
     para->hpfHz = audio_dsp_hpf_valid((int)lValue) ? (int)lValue : 0;
+    lValue = ini_getl(SEC_RECORD, "audio_clarity", 0, confFile);
+    para->clarity = lValue >= 0 && lValue <= 3 ? (int)lValue : 0;
 }
 
 void conf_saveAiParams(char* confFile, AiParams_t* para)

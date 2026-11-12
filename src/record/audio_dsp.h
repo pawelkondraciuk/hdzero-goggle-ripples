@@ -30,6 +30,8 @@ typedef struct {
     int sampleRate;
     int channels;
     int hpfHz;
+    int clarity; // 0=off, 1=low, 2=medium, 3=high
+    double inputGain; // fixed headroom for the presence boost
     int nbStages;
     AudioBiquad_t stage[AUDIO_DSP_MAX_STAGES];
     // Transposed direct form II state, per stage and channel.
@@ -40,10 +42,11 @@ typedef struct {
 // Returns true when hz is one of the supported DVR high-pass corners
 // (0 = off, 80, 120, 160, 200).
 bool audio_dsp_hpf_valid(int hz);
+bool audio_dsp_clarity_valid(int level);
 
-// Configure the filter chain. Invalid or "off" settings, an unsupported
-// sample rate or channel count leave the DSP inactive. Returns dsp->active.
-bool audio_dsp_configure(AudioDsp_t *dsp, int sampleRate, int channels, int hpfHz);
+// Configure HPF and clarity independently; invalid settings mean off.
+// Both off or an unsupported format leave DSP inactive. Returns dsp->active.
+bool audio_dsp_configure(AudioDsp_t *dsp, int sampleRate, int channels, int hpfHz, int clarity);
 
 // Clear the filter history (start of every recording).
 void audio_dsp_reset(AudioDsp_t *dsp);

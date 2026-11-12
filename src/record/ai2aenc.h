@@ -51,7 +51,8 @@ typedef struct
     int         channels;
     int         bitsPerSample;
     int         mFrameSize;
-    int         hpfHz;          // DVR high-pass corner, 0 = off (direct AI->AENC bind)
+    int         clarity;        // 0=off, 1=low, 2=medium, 3=high
+    int         hpfHz;          // DVR high-pass corner, 0 = off (direct bind when clarity is also off)
 } AiParams_t;
 
 typedef AIO_ATTR_S  AioAttr_t;

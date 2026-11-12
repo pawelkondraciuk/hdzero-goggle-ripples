@@ -29,7 +29,7 @@ static void ai2aenc_configAiAttr(Ai2Aenc_t* aa, AiParams_t* param)
     aa->aiAttr.u32ChnCnt = param->channels;
     aa->aiAttr.enSamplerate = (AUDIO_SAMPLE_RATE_E)param->sampleRate;
     aa->aiAttr.enBitwidth = (AUDIO_BIT_WIDTH_E)(param->bitsPerSample/8-1);
-    if (param->hpfHz > 0)
+    if (param->hpfHz > 0 || param->clarity > 0)
         aa->aiAttr.enSoundmode = param->channels == 2 ? AUDIO_SOUND_MODE_STEREO : AUDIO_SOUND_MODE_MONO;
 }
 
@@ -203,7 +203,7 @@ static void *ai2aenc_pcmProc(void *pThreadData)
     bool firstFrame = true;
     bool warnedSize = false;
 
-    LOGD("pcm thread: dev[%d] chn[%d] ae[%d] hpf[%dHz]", aa->aiDev, aa->aiChn, aa->aeChn, aa->dsp.hpfHz);
+    LOGD("pcm thread: dev[%d] chn[%d] ae[%d] hpf[%dHz] clarity[%d]", aa->aiDev, aa->aiChn, aa->aeChn, aa->dsp.hpfHz, aa->dsp.clarity);
 
     while (!__atomic_load_n(&aa->bExit, __ATOMIC_ACQUIRE))
     {
@@ -343,9 +343,9 @@ ERRORTYPE ai2aenc_prepare(Ai2Aenc_t* aa, AiParams_t* aiParams, AencParams_t* aeP
     memset(&aa->dsp, 0, sizeof(aa->dsp));
     if (aiParams->bitsPerSample == 16)
     {
-        aa->dspActive = audio_dsp_configure(&aa->dsp, aiParams->sampleRate, aiParams->channels, aiParams->hpfHz);
+        aa->dspActive = audio_dsp_configure(&aa->dsp, aiParams->sampleRate, aiParams->channels, aiParams->hpfHz, aiParams->clarity);
     }
-    LOGI("dvr audio dsp: %s (hpf=%d Hz)", aa->dspActive ? "on" : "off", aa->dsp.hpfHz);
+    LOGI("dvr audio dsp: %s (hpf=%d Hz, clarity=%d)", aa->dspActive ? "on" : "off", aa->dsp.hpfHz, aa->dsp.clarity);
 
     if (aa->aiChn >= 0 && !aa->dspActive)
     {

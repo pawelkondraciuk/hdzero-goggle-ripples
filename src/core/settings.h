@@ -126,6 +126,7 @@ typedef struct {
     bool osd;
     bool audio;
     setting_record_audio_source_t audio_source;
+    int audio_clarity; // 0=off, 1=low, 2=medium, 3=high
     int audio_hpf_hz; // 0 (off), 80, 120, 160, 200; applied at recording start
     int dvr_audio_volume;
     int live_audio_volume;

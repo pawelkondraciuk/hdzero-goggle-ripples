@@ -38,6 +38,8 @@
 static btn_group_t btn_group_record_audio;
 static btn_group_t btn_group_audio_source;
 static slider_group_t slider_group_dvr_hpf;
+static slider_group_t slider_group_clarity;
+static const char *clarity_names[] = {"Off", "Low", "Medium", "High"};
 static const int hpf_values[] = {0, 80, 120, 160, 200};
 static const char *hpf_names[] = {"Off", "80 Hz", "120 Hz", "160 Hz", "200 Hz"};
 
@@ -65,6 +67,7 @@ enum {
     ROW_MIC_GAIN,
     ROW_LINEIN_GAIN,
     ROW_DVR_HPF,
+    ROW_CLARITY,
     ROW_RUN_TEST, // last item of the Volume Control section
     ROW_BACK,
     ROW_NOTE,
@@ -230,6 +233,15 @@ static lv_obj_t *page_audio_create(lv_obj_t *parent, panel_arr_t *arr) {
                          LV_GRID_ALIGN_CENTER, ROW_DVR_HPF, 1);
     lv_obj_set_width(slider_group_dvr_hpf.label, LV_SIZE_CONTENT);
     lv_label_set_text(slider_group_dvr_hpf.label, _lang(hpf_names[hpf_index()]));
+    create_slider_item(&slider_group_clarity, cont, _lang("Voice Clarity"), 3, g_setting.record.audio_clarity, ROW_CLARITY);
+    lv_obj_set_grid_cell(slider_group_clarity.name, LV_GRID_ALIGN_START, 1, 1,
+                         LV_GRID_ALIGN_CENTER, ROW_CLARITY, 1);
+    lv_obj_set_grid_cell(slider_group_clarity.slider, LV_GRID_ALIGN_STRETCH, 2, 3,
+                         LV_GRID_ALIGN_CENTER, ROW_CLARITY, 1);
+    lv_obj_set_grid_cell(slider_group_clarity.label, LV_GRID_ALIGN_START, 5, 1,
+                         LV_GRID_ALIGN_CENTER, ROW_CLARITY, 1);
+    lv_obj_set_width(slider_group_clarity.label, LV_SIZE_CONTENT);
+    lv_label_set_text(slider_group_clarity.label, _lang(clarity_names[g_setting.record.audio_clarity]));
     snprintf(buf, sizeof(buf), "< %s", _lang("Back"));
     create_label_item(cont, buf, 1, ROW_BACK, 1);
     lv_obj_t *note = lv_label_create(cont);
@@ -336,6 +348,8 @@ static void page_audio_update_test_indicator(uint32_t delta_ms) {
 }
 
 static slider_group_t *page_audio_selected_slider() {
+    if (selected_slider_row == ROW_CLARITY)
+        return &slider_group_clarity;
     if (selected_slider_row == ROW_DVR_HPF)
         return &slider_group_dvr_hpf;
     if (selected_slider_row == ROW_DVR_AUDIO_VOLUME)
@@ -350,6 +364,8 @@ static slider_group_t *page_audio_selected_slider() {
 }
 
 static int page_audio_selected_slider_max() {
+    if (selected_slider_row == ROW_CLARITY)
+        return 3;
     if (selected_slider_row == ROW_DVR_HPF)
         return 4;
     if (selected_slider_row == ROW_DVR_AUDIO_VOLUME)
@@ -360,6 +376,8 @@ static int page_audio_selected_slider_max() {
 }
 
 static int *page_audio_selected_setting() {
+    if (selected_slider_row == ROW_CLARITY)
+        return &g_setting.record.audio_clarity;
     if (selected_slider_row == ROW_DVR_AUDIO_VOLUME)
         return &g_setting.record.dvr_audio_volume;
     if (selected_slider_row == ROW_LIVE_AUDIO_VOLUME)
@@ -401,6 +419,8 @@ static void page_audio_update_slider(int value) {
 
     *setting_value = value;
     update_slider_item_with_value(slider_group, *setting_value);
+    if (selected_slider_row == ROW_CLARITY)
+        lv_label_set_text(slider_group->label, _lang(clarity_names[value]));
     selected_slider_changed = true;
 }
 
@@ -413,7 +433,9 @@ static void page_audio_exit_slider() {
     app_state_push(APP_STATE_SUBMENU);
 
     if (selected_slider_changed) {
-        if (selected_slider_row == ROW_DVR_HPF) {
+        if (selected_slider_row == ROW_CLARITY) {
+            ini_putl("record", "audio_clarity", g_setting.record.audio_clarity, SETTING_INI);
+        } else if (selected_slider_row == ROW_DVR_HPF) {
             ini_putl("record", "audio_hpf_hz", g_setting.record.audio_hpf_hz, SETTING_INI);
         } else if (selected_slider_row == ROW_DVR_AUDIO_VOLUME) {
             ini_putl("record", "dvr_audio_volume_v2", g_setting.record.dvr_audio_volume, SETTING_INI);
@@ -688,7 +710,7 @@ static void page_audio_on_click(uint8_t key, int sel) {
             return;
         selected_test_active = true;
         app_state_push(APP_STATE_SUBMENU_ITEM_FOCUSED);
-    } else if (sel == ROW_DVR_HPF || sel == ROW_DVR_AUDIO_VOLUME || sel == ROW_LIVE_AUDIO_VOLUME ||
+    } else if (sel == ROW_CLARITY || sel == ROW_DVR_HPF || sel == ROW_DVR_AUDIO_VOLUME || sel == ROW_LIVE_AUDIO_VOLUME ||
                sel == ROW_MIC_GAIN || sel == ROW_LINEIN_GAIN) {
         slider_group_t *slider_group;
 
